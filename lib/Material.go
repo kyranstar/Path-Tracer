@@ -12,37 +12,58 @@ type Material struct {
 	Transparency float64 // the amount of light to let through
 	Gloss        float64 // reflection cone angle in radians
 	Emittance    float64
+	Tint         float64
 }
+type BounceType uint8
+
+const (
+	BounceTypeAny BounceType = iota
+	BounceTypeSpecular
+	BounceTypeDiffuse
+)
 
 func (m *Material) Color() RGB {
 	return m.Col
 }
 
-func (m *Material) Bounce(r Ray, fu, fv float64, hit Hit, rnd *rand.Rand) (bool, Ray) {
+func (m *Material) Bounce(r Ray, fu, fv float64, bounceType BounceType, hit Hit, rnd *rand.Rand) (reflectedRay Ray, reflected bool, weight float64) {
 
 	var direction Vector
 
-	if m.Reflectivity > 0 && rnd.Float64() < m.Reflectivity {
+	p := m.Reflectivity
+	switch bounceType {
+	case BounceTypeAny:
+		reflected = rnd.Float64() < p
+	case BounceTypeSpecular:
+		reflected = true
+	case BounceTypeDiffuse:
+		reflected = false
+	}
+
+	if reflected {
 		// we should reflect
 		reflectDirection := r.Direction.Reflect(hit.Normal)
 		direction = Cone(reflectDirection, m.Gloss, fu, fv, rnd)
-
-	} else if m.Transparency > 0 && rnd.Float64() < m.Transparency {
+		weight = p
+	} else if m.Transparency > 0 {
 		direction = hit.Normal.Refract(r.Direction, m.Index)
 		direction = Cone(direction, m.Gloss, fu, fv, rnd)
 		hit.Point = hit.Point.Add(direction.MultiplyScalar(1e-4))
+		weight = 1 - p
 	} else {
 		direction = hit.Normal.Add(VectorInUnitSphere(rnd))
+		weight = 1 - p
 	}
 
-	return true, Ray{hit.Point, direction.Normalize()}
+	reflectedRay = Ray{hit.Point, direction.Normalize()}
+	return
 }
 
 func Lambertian(c RGB) *Material {
 	return &Material{Col: c}
 }
-func Metal(c RGB, gloss, reflectivity float64) *Material {
-	return &Material{Col: c, Index: 1, Reflectivity: reflectivity, Gloss: gloss}
+func Metal(c RGB, gloss, reflectivity, tint float64) *Material {
+	return &Material{Col: c, Index: 1, Reflectivity: reflectivity, Gloss: gloss, Tint: tint}
 }
 func Transparent(c RGB, index, gloss, reflectivity, transparency float64) *Material {
 	return &Material{Col: c, Index: index, Gloss: gloss, Reflectivity: reflectivity, Transparency: transparency}

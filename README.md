@@ -15,3 +15,12 @@ Features:
 - K-D tree acceleration
 - Supports adaptive sampling 
 - Thin lens model with depth of field effect
+
+Todo:
+- Volume rendering
+- Transformations
+- Textures
+- Normal maps
+- Bump maps
+- Metropolis light transport
+- More sophisticated camera lens

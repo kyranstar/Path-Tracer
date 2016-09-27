@@ -6,9 +6,10 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	. "pathtracer/lib"
 	"runtime"
 	"time"
+
+	. "./lib"
 )
 import "runtime/pprof"
 
@@ -160,14 +161,23 @@ func getColor(r Ray, scene *Scene, depth int, rnd *rand.Rand, intersections *int
 		if hit.Material.Emittance > 0.0 {
 			return hit.Material.Color()
 		}
-
-		bounced, bouncedRay := hit.Bounce(r, rnd.Float64(), rnd.Float64(), hit, rnd)
-		if bounced {
+		mode := BounceTypeAny
+		bouncedRay, reflected, p := hit.Bounce(r, rnd.Float64(), rnd.Float64(), mode, hit, rnd)
+		if mode == BounceTypeAny {
+			p = 1
+		}
+		if p > 0 && reflected {
+			// specular
+			indirectLight := getColor(bouncedRay, scene, depth+1, rnd, intersections)
+			tinted := indirectLight.Mix(hit.Material.Color().Multiply(indirectLight), hit.Material.Tint)
+			return tinted.MultiplyScalar(p)
+		} else if p > 0 && !reflected {
+			//diffuse
 			indirectLight := getColor(bouncedRay, scene, depth+1, rnd, intersections)
 			directLight := getLighting(scene, hit, bouncedRay, rnd)
-			return hit.Material.Color().Multiply(directLight.Add(indirectLight))
+			return hit.Material.Color().Multiply(directLight.Add(indirectLight)).MultiplyScalar(p)
 		}
-		return hit.Material.Color()
+		return RGB{}
 	}
 	return background(r)
 }

@@ -37,6 +37,11 @@ func (c RGB) MaxComponent() float64 {
 func (c RGB) RGBA() color.RGBA {
 	return color.RGBA{uint8(c.R * 255.0), uint8(c.G * 255.0), uint8(c.B * 255.0), uint8(255)}
 }
+func (a RGB) Mix(b RGB, pct float64) RGB {
+	a = a.MultiplyScalar(1 - pct)
+	b = b.MultiplyScalar(pct)
+	return a.Add(b)
+}
 
 //func (c RGB) clamp() RGB {
 //	r := c.R > 1 ? 1 : c.R < 0 ? 0 : c.R
