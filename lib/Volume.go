@@ -4,18 +4,22 @@ import (
 	"math/rand"
 )
 
-type Func func(x, y float64) float64
+type PhaseFunc func(x, y float64) float64
 
 type Volume struct {
-	Function *Func
-	Box      *Box
-	Mat      *Material
+	Phase *PhaseFunc
+	Box   *Box
+	Mat   *VolumeMaterial
+}
+type VolumeMaterial struct {
 }
 
-func NewVolume(function *Func, box *Box, mat *Material) *Volume {
+func NewVolume(function *PhaseFunc, box *Box, mat *VolumeMaterial) *Volume {
 	return &Volume{function, box, mat}
 }
 func (v *Volume) Hit(r Ray, tMin float64, tMax float64) (bool, Hit) {
+	//tNear, tFar = v.Box.Intersect(r)
+
 	return true, Hit{}
 }
 func (v *Volume) RandomPoint(rnd *rand.Rand) Vector {
@@ -31,5 +35,5 @@ func (v *Volume) MidPoint() Vector {
 	return v.Box.MidPoint()
 }
 func (v *Volume) Material() *Material {
-	return v.Mat
+	return nil
 }

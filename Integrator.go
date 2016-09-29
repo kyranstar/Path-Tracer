@@ -9,6 +9,9 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/lxn/walk"
+	. "github.com/lxn/walk/declarative"
+
 	. "./lib"
 )
 import "runtime/pprof"
@@ -20,7 +23,7 @@ const Width = 640
 const Height = 580
 const Fov = 50.0
 const ApertureDiameter = 0.000001
-const SPP = 20 // samples per pixel
+const SPP = 1 // samples per pixel
 const OutputFile = "img.png"
 const tMin = .001
 const tMax = math.MaxFloat64
@@ -37,6 +40,9 @@ var random = rand.New(rand.NewSource(0))
 
 var flagCpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
+var mw = new(MyMainWindow)
+var imageView *walk.ImageView
+
 func main() {
 	flag.Parse()
 	if *flagCpuprofile != "" {
@@ -47,7 +53,56 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
+
 	buf := NewBuffer(Width, Height)
+
+	scene := setUpScene()
+
+	cam := NewCamera(CamPosition, CamDirection, Fov, Width/Height, ApertureDiameter)
+	fmt.Println("Rendering", Width, "x", Height, "image with", SPP, "samples per pixel.")
+	hasSetUpDisplay := false
+	if _, err := (MainWindow{
+		AssignTo: &mw.MainWindow,
+		Title:    "Walk Image Viewer Example",
+		MenuItems: []MenuItem{
+			Menu{
+				Text: "&File",
+				Items: []MenuItem{
+					Action{
+						Text:        "Exit",
+						OnTriggered: func() { mw.Close() },
+					},
+				},
+			},
+		},
+		Size:   Size{Width, Height},
+		Layout: VBox{MarginsZero: true},
+		Children: []Widget{
+			TabWidget{
+				AssignTo: &mw.tabWidget,
+			},
+			PushButton{
+				Text: "Render",
+				OnClicked: func() {
+					if !hasSetUpDisplay {
+						setUpImageDisplay()
+						hasSetUpDisplay = true
+					}
+					go func() {
+						render(scene, cam, buf)
+						WritePng(OutputFile, buf.Image(ColorChannel))
+						img, _ := walk.NewBitmapFromImage(buf.Image(ColorChannel))
+						imageView.SetImage(img)
+					}()
+				},
+			},
+		},
+	}.Run()); err != nil {
+		panic(err)
+	}
+
+}
+func setUpScene() *Scene {
 	scene := &Scene{}
 	//mat := Metal(RGB{0.9, 1.0, 0.9}, math.Pi/8)
 	//mat2 := Lambertian(RGB{0.1, 1.0, 1.0})
@@ -77,10 +132,7 @@ func main() {
 	tr := Vector{5, 0, 5}
 	objects = append(objects, NewTriangle(bl, br, tl, Vector{0, 1, 0}, Vector{0, 1, 0}, Vector{0, 1, 0}, Lambertian(RGB{.5, .5, .5})))
 	objects = append(objects, NewTriangle(tl, tr, br, Vector{0, 1, 0}, Vector{0, 1, 0}, Vector{0, 1, 0}, Lambertian(RGB{.5, .5, .5})))
-	objects = append(objects, &Sphere{Center: Vector{1, 2, 4}, Radius: .1, Mat: Light(RGB{1, 1, 1}, 1)})
-	objects = append(objects, &Sphere{Center: Vector{2, 2, 4}, Radius: .1, Mat: Light(RGB{1, 1, 1}, 1)})
-	objects = append(objects, &Sphere{Center: Vector{4, 2, 4}, Radius: .1, Mat: Light(RGB{1, 1, 1}, 1)})
-	objects = append(objects, &Sphere{Center: Vector{4, 2, 2}, Radius: .1, Mat: Light(RGB{1, 1, 1}, 1)})
+	objects = append(objects, &Sphere{Center: Vector{2.25, 3, 2.25}, Radius: 1, Mat: Light(RGB{1, 1, 1}, .2)})
 	objects = append(objects, &Sphere{Center: Vector{1.25, .5, 3}, Radius: .5, Mat: Lambertian(RGB{.8, .1, .1})})
 	//barrel, _ := LoadOBJ("barrel.obj", Vector{1.5, 1, 1.5}, .5, *Light(RGB{.8, .6, .2}, .75))
 	teapot, _ := LoadOBJ("teapot.obj", Vector{2.4, .8, -1}, .25, *Transparent(RGB{.9, 1, .9}, 1.5, 0, .3, .7))
@@ -89,16 +141,56 @@ func main() {
 	objects = append(objects, teapot)
 
 	scene.AddAll(objects)
+	return scene
+}
 
-	cam := NewCamera(CamPosition, CamDirection, Fov, Width/Height, ApertureDiameter)
-	fmt.Println("Rendering", Width, "x", Height, "image with", SPP, "samples per pixel.")
-	start := time.Now()
+func setUpImageDisplay() error {
+	var succeeded bool
 
-	render(scene, cam, buf)
+	imagePage, err := walk.NewTabPage()
+	if err != nil {
+		return err
+	}
+	err = imagePage.SetTitle("Rendered Image")
+	if err != nil {
+		return err
+	}
 
-	fmt.Println("Render time: ", (time.Since(start)))
-	WritePng(OutputFile, buf.Image(ColorChannel))
+	imagePage.SetLayout(walk.NewHBoxLayout())
 
+	defer func() {
+		if !succeeded {
+			imagePage.Dispose()
+		}
+	}()
+
+	imageView, err = walk.NewImageView(imagePage)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if !succeeded {
+			imageView.Dispose()
+		}
+	}()
+
+	if err := mw.tabWidget.Pages().Add(imagePage); err != nil {
+		return err
+	}
+
+	if err := mw.tabWidget.SetCurrentIndex(mw.tabWidget.Pages().Len() - 1); err != nil {
+		return err
+	}
+
+	succeeded = true
+	return nil
+}
+
+type MyMainWindow struct {
+	*walk.MainWindow
+	tabWidget    *walk.TabWidget
+	prevFilePath string
 }
 
 func render(scene *Scene, cam *Camera, buf *Buffer) {
@@ -199,6 +291,6 @@ func getLighting(scene *Scene, hit Hit, bounce Ray, rnd *rand.Rand) RGB {
 }
 
 func background(r Ray) RGB {
-	//return RGB{0, 0, 0}
-	return RGB{0, .3, .5}.MultiplyScalar(math.Max(0.0, r.Direction.Dot(Vector{0, 1, 1})))
+	return RGB{0, 0, 0}
+	//return RGB{0, .3, .5}.MultiplyScalar(math.Max(0.0, r.Direction.Dot(Vector{0, 1, 1})))
 }
