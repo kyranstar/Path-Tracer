@@ -23,12 +23,17 @@ const Width = 640
 const Height = 580
 const Fov = 50.0
 const ApertureDiameter = 0.000001
-const SPP = 1 // samples per pixel
-const OutputFile = "img.png"
+
+var OutputFile = "img.png"
+
 const tMin = .001
 const tMax = math.MaxFloat64
-const MaxDepth = 5
-const ShadowRays = 25
+
+var MaxDepth = 5
+
+var SPP = 1 // samples per pixel
+var ShadowRays = 25
+var TotalTime time.Time
 
 const AdaptiveSamples = 0
 const AdaptiveThreshold = 1
@@ -55,15 +60,13 @@ func main() {
 	}
 
 	buf := NewBuffer(Width, Height)
-
 	scene := setUpScene()
-
 	cam := NewCamera(CamPosition, CamDirection, Fov, Width/Height, ApertureDiameter)
-	fmt.Println("Rendering", Width, "x", Height, "image with", SPP, "samples per pixel.")
-	hasSetUpDisplay := false
-	if _, err := (MainWindow{
+
+	var sppField, shadowRayField, rayBounceDepthField *walk.NumberEdit
+	win := MainWindow{
 		AssignTo: &mw.MainWindow,
-		Title:    "Walk Image Viewer Example",
+		Title:    "Golang pathtracer",
 		MenuItems: []MenuItem{
 			Menu{
 				Text: "&File",
@@ -80,16 +83,62 @@ func main() {
 		Children: []Widget{
 			TabWidget{
 				AssignTo: &mw.tabWidget,
+				Pages: []TabPage{
+					TabPage{
+						Title:  "Rendered Image",
+						Layout: HBox{},
+						Children: []Widget{
+							ImageView{
+								AssignTo: &imageView,
+							},
+						},
+					},
+					TabPage{
+						Title:  "Tools",
+						Layout: VBox{},
+						Children: []Widget{
+							Label{
+								Text: "Samples Per Pixel:",
+							},
+							NumberEdit{
+								AssignTo: &sppField,
+								Value:    float64(SPP),
+								OnValueChanged: func() {
+									SPP = int(sppField.Value())
+								},
+							},
+							Label{
+								Text: "Shadow rays per sample:",
+							},
+							NumberEdit{
+								AssignTo: &shadowRayField,
+								Value:    float64(ShadowRays),
+								OnValueChanged: func() {
+									ShadowRays = int(shadowRayField.Value())
+								},
+							},
+							Label{
+								Text: "Ray bounce depth:",
+							},
+							NumberEdit{
+								AssignTo: &rayBounceDepthField,
+								Value:    float64(MaxDepth),
+								OnValueChanged: func() {
+									MaxDepth = int(rayBounceDepthField.Value())
+								},
+							},
+						},
+					},
+				},
 			},
 			PushButton{
 				Text: "Render",
 				OnClicked: func() {
-					if !hasSetUpDisplay {
-						setUpImageDisplay()
-						hasSetUpDisplay = true
-					}
 					go func() {
+						t := time.Now()
 						render(scene, cam, buf)
+						TotalTime = TotalTime.Add(time.Now().Sub(t))
+						fmt.Println("Total time: " + TotalTime.Format("15:04:05.0000"))
 						WritePng(OutputFile, buf.Image(ColorChannel))
 						img, _ := walk.NewBitmapFromImage(buf.Image(ColorChannel))
 						imageView.SetImage(img)
@@ -97,7 +146,9 @@ func main() {
 				},
 			},
 		},
-	}.Run()); err != nil {
+	}
+
+	if _, err := win.Run(); err != nil {
 		panic(err)
 	}
 
@@ -144,53 +195,9 @@ func setUpScene() *Scene {
 	return scene
 }
 
-func setUpImageDisplay() error {
-	var succeeded bool
-
-	imagePage, err := walk.NewTabPage()
-	if err != nil {
-		return err
-	}
-	err = imagePage.SetTitle("Rendered Image")
-	if err != nil {
-		return err
-	}
-
-	imagePage.SetLayout(walk.NewHBoxLayout())
-
-	defer func() {
-		if !succeeded {
-			imagePage.Dispose()
-		}
-	}()
-
-	imageView, err = walk.NewImageView(imagePage)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if !succeeded {
-			imageView.Dispose()
-		}
-	}()
-
-	if err := mw.tabWidget.Pages().Add(imagePage); err != nil {
-		return err
-	}
-
-	if err := mw.tabWidget.SetCurrentIndex(mw.tabWidget.Pages().Len() - 1); err != nil {
-		return err
-	}
-
-	succeeded = true
-	return nil
-}
-
 type MyMainWindow struct {
 	*walk.MainWindow
-	tabWidget    *walk.TabWidget
-	prevFilePath string
+	tabWidget *walk.TabWidget
 }
 
 func render(scene *Scene, cam *Camera, buf *Buffer) {
